@@ -10,8 +10,22 @@ class RoleMiddleware
 {
     public function handle(Request $request, Closure $next, string ...$roles): Response
     {
-        if (! $request->user() || ! in_array($request->user()->role, $roles, true)) {
-            abort(403, 'You do not have access to this AgroTransit area.');
+        if (! $request->user()) {
+            return redirect()->route('login');
+        }
+
+        if (! in_array($request->user()->role, $roles, true)) {
+            $route = match ($request->user()->role) {
+                'farmer' => 'farmer.dashboard',
+                'driver' => 'driver.dashboard',
+                'transport_owner' => 'owner.dashboard',
+                'admin' => 'admin.dashboard',
+                default => 'home',
+            };
+
+            return redirect()
+                ->route($route)
+                ->with('status', 'You are already logged in as '.$request->user()->role.'. Use logout to switch accounts.');
         }
 
         return $next($request);

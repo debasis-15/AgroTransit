@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\LoginLog;
-use App\Models\User;
 use App\Models\OtpVerification;
+use App\Models\User;
 use App\Mail\OtpMail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -60,6 +60,15 @@ class LoginController extends Controller
             ]);
         }
 
+        if (! $user->is_active) {
+            Auth::logout();
+            $this->sendLoginOtp($user);
+
+            return redirect()
+                ->route('otp.show', $user)
+                ->with('status', 'Please verify your email. We sent a fresh OTP to your inbox.');
+        }
+
         RateLimiter::clear($rateKey);
         $request->session()->regenerate();
 
@@ -108,5 +117,26 @@ class LoginController extends Controller
         return str_starts_with($redirect, '/')
             && ! str_starts_with($redirect, '//')
             && ! str_contains($redirect, '://');
+    }
+
+    private function sendLoginOtp(User $user): void
+    {
+        $otp = (string) random_int(100000, 999999);
+
+        OtpVerification::where('user_id', $user->id)
+            ->where('verified', false)
+            ->update(['verified' => true]);
+
+        OtpVerification::create([
+            'user_id' => $user->id,
+            'otp' => Hash::make($otp),
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        try {
+            Mail::to($user->email)->send(new OtpMail($otp));
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 }

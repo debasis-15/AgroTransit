@@ -11,7 +11,9 @@ use App\Models\Vehicle;
 use App\Models\VehicleType;
 use App\Models\FarmerProfile;
 use App\Models\Driver;
+use App\Models\Shipment;
 use App\Models\TransportOwner;
+use App\Models\VehicleRequest;
 use Illuminate\Database\Seeder;
 
 class AgroTransitSeeder extends Seeder
@@ -175,6 +177,32 @@ class AgroTransitSeeder extends Seeder
             );
         }
 
+        $acceptedAssignments = [
+            1001 => 201,
+            1002 => 202,
+            1003 => 203,
+            1004 => 204,
+            1006 => 205,
+            1007 => 206,
+            1008 => 207,
+            1009 => 208,
+        ];
+
+        foreach ($acceptedAssignments as $vehicleId => $driverId) {
+            Vehicle::whereKey($vehicleId)->update(['driver_id' => $driverId]);
+            VehicleRequest::firstOrCreate(
+                ['vehicle_id' => $vehicleId, 'driver_id' => $driverId],
+                ['status' => 'accepted']
+            );
+        }
+
+        foreach ([[1020, 209], [1024, 210]] as [$vehicleId, $driverId]) {
+            VehicleRequest::firstOrCreate(
+                ['vehicle_id' => $vehicleId, 'driver_id' => $driverId],
+                ['status' => 'pending']
+            );
+        }
+
         // Recommendation Rules
         RecommendationRule::firstOrCreate(['produce_type' => 'tomato', 'vehicle_type_id' => $reefer->id], ['max_weight_kg' => 3500, 'max_distance_km' => 650, 'temperature_sensitive' => true, 'priority' => 10]);
         RecommendationRule::firstOrCreate(['produce_type' => 'wheat', 'vehicle_type_id' => $mini->id], ['max_weight_kg' => 1200, 'max_distance_km' => 300, 'temperature_sensitive' => false, 'priority' => 7]);
@@ -220,6 +248,19 @@ class AgroTransitSeeder extends Seeder
                 'priority' => 'normal',
                 'status' => 'pooled',
                 'estimated_cost' => 13110
+            ]
+        );
+
+        Shipment::firstOrCreate(
+            ['tracking_code' => 'TRK-DEMO-001'],
+            [
+                'request_id' => $requestA->id,
+                'vehicle_id' => $vehicle->id,
+                'driver_id' => $driver->id,
+                'shipment_status' => 'in_transit',
+                'estimated_arrival' => now()->addHours(5),
+                'current_latitude' => 30.9038,
+                'current_longitude' => 75.8573,
             ]
         );
 

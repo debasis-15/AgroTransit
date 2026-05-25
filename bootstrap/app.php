@@ -17,6 +17,19 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth' => \Illuminate\Auth\Middleware\Authenticate::class,
             'guest' => \Illuminate\Auth\Middleware\RedirectIfAuthenticated::class,
         ]);
+
+        $middleware->validateCsrfTokens(except: [
+            'login',
+            'logout',
+            'signup',
+            'verify-email/*',
+            'api/vehicles/match',
+            'api/bookings',
+            'owner/vehicles',
+            'owner/requests/*/decide',
+            'driver/request-vehicle/*',
+            'admin/approve-driver/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

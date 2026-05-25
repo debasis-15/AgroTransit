@@ -108,11 +108,11 @@
         <form class="login-card" method="post" action="{{ route('login.store') }}" id="loginForm">
             @csrf
             @php
-                $previousUrl = url()->previous();
-                $loginUrl = route('login');
-                $redirectTo = request('redirect_to') ?: ($previousUrl !== $loginUrl ? $previousUrl : route('home'));
+                $redirectTo = request('redirect_to');
             @endphp
-            <input type="hidden" name="redirect_to" value="{{ $redirectTo }}">
+            @if($redirectTo)
+                <input type="hidden" name="redirect_to" value="{{ $redirectTo }}">
+            @endif
             @if(session('status'))
                 <div class="alert alert-success py-2">{{ session('status') }}</div>
             @endif
@@ -154,13 +154,13 @@
 
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="remember"> Remember me</label>
-                <a href="#" class="link-dark fw-semibold">Forgot password?</a>
+                <button class="btn btn-link link-dark fw-semibold p-0 text-decoration-none" type="button" id="forgotPasswordBtn">Forgot password?</button>
             </div>
 
             <button class="secure-btn" type="submit">Login Securely -></button>
 
             <div class="d-flex gap-2 mt-3">
-                <button class="btn btn-outline-template w-100" type="button">Google Login</button>
+                <button class="btn btn-outline-template w-100" type="button" id="googleLoginBtn">Google Login</button>
             </div>
             <p class="text-center text-muted mt-3 mb-0">New to AgroTransit? <a class="link-dark fw-bold" href="{{ route('register') }}">Create account</a></p>
 
@@ -209,6 +209,14 @@
         const isPassword = input.type === 'password';
         input.type = isPassword ? 'text' : 'password';
         this.textContent = isPassword ? 'Hide' : 'Show';
+    });
+
+    document.getElementById('forgotPasswordBtn').addEventListener('click', function () {
+        alert('Password reset is handled by the AgroTransit admin team for this demo. Contact tech2edge01@gmail.com.');
+    });
+
+    document.getElementById('googleLoginBtn').addEventListener('click', function () {
+        alert('Google login is not connected for this build. Use email/phone and password to sign in.');
     });
 
 

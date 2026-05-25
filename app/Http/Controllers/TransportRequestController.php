@@ -89,7 +89,15 @@ class TransportRequestController extends Controller
         ->whereHas('driver', function ($q) {
             $q->where('verified', true);
         })
-        ->orderByRaw("FIELD(tracking_status, 'available', 'busy', 'in_transit', 'maintenance')")
+        ->orderByRaw("
+            CASE tracking_status
+                WHEN 'available' THEN 1
+                WHEN 'busy' THEN 2
+                WHEN 'in_transit' THEN 3
+                WHEN 'maintenance' THEN 4
+                ELSE 5
+            END
+        ")
         ->get();
 
         $result = $vehicles->map(function ($vehicle) {
@@ -321,10 +329,10 @@ class TransportRequestController extends Controller
             $vehicle = null;
             $pooledTrip = null;
 
-            if ($data['pooled_trip_id']) {
+            if (! empty($data['pooled_trip_id'])) {
                 $pooledTrip = PooledTrip::findOrFail($data['pooled_trip_id']);
                 $vehicle = $pooledTrip->vehicle;
-            } elseif ($data['vehicle_id']) {
+            } elseif (! empty($data['vehicle_id'])) {
                 $vehicle = Vehicle::findOrFail($data['vehicle_id']);
             } else {
                 return response()->json(['error' => 'No vehicle or pool selected.'], 422);

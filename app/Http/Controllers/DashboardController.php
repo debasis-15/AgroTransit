@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleType;
 use App\Models\Driver;
+use App\Models\LoginLog;
 use App\Models\TransportOwner;
 use App\Models\VehicleRequest;
 use App\Models\Shipment;
@@ -228,18 +229,85 @@ class DashboardController extends Controller
 
     public function admin(): View
     {
-        $totalFarmers = User::where('role', 'farmer')->count();
-        $activeVehicles = Vehicle::where('tracking_status', '!=', 'maintenance')->count();
-        
-        // List drivers awaiting verification
-        $unverifiedDrivers = Driver::with('user')->where('verified', false)->get();
+        $roleCounts = User::query()
+            ->selectRaw('role, count(*) as total')
+            ->groupBy('role')
+            ->pluck('total', 'role');
 
-        return view('dashboards.admin-home', compact('totalFarmers', 'activeVehicles', 'unverifiedDrivers'));
+        $totalUsers = User::count();
+        $totalFarmers = (int) ($roleCounts['farmer'] ?? 0);
+        $totalDrivers = (int) ($roleCounts['driver'] ?? 0);
+        $totalOwners = (int) ($roleCounts['transport_owner'] ?? 0);
+        $totalAdmins = (int) ($roleCounts['admin'] ?? 0);
+        $totalVehicles = Vehicle::count();
+        $activeVehicles = Vehicle::where('tracking_status', '!=', 'maintenance')->count();
+        $activeShipments = Shipment::whereIn('shipment_status', ['pickup', 'loading', 'in_transit'])->count();
+        $todayRevenue = TransportRequest::whereDate('created_at', today())->sum('estimated_cost');
+        $platformCommission = $todayRevenue * 0.10;
+
+        $unverifiedDrivers = Driver::with('user')->where('verified', false)->get();
+        $owners = TransportOwner::with('user')->withCount('vehicles')->latest()->take(12)->get();
+        $drivers = Driver::with(['user', 'vehicles.type'])->latest()->take(12)->get();
+        $vehicles = Vehicle::with(['type', 'owner.user', 'driver.user'])->latest()->take(12)->get();
+        $recentRequests = TransportRequest::with(['farmer.user', 'vehicleType', 'shipments.driver.user', 'shipments.vehicle'])
+            ->latest()
+            ->take(10)
+            ->get();
+        $assignmentRequests = VehicleRequest::with(['driver.user', 'vehicle.type', 'vehicle.owner.user'])
+            ->latest()
+            ->take(10)
+            ->get();
+        $users = User::latest()->take(25)->get();
+        $auditLogs = LoginLog::with('user')->latest('login_time')->take(15)->get();
+        $systemConfig = [
+            'Application Name' => config('app.name'),
+            'Environment' => config('app.env'),
+            'Debug Mode' => config('app.debug') ? 'Enabled' : 'Disabled',
+            'Database' => config('database.default'),
+            'Queue' => config('queue.default'),
+            'Cache' => config('cache.default'),
+            'Mail' => config('mail.default'),
+            'Timezone' => config('app.timezone'),
+        ];
+
+        return view('dashboards.admin-home', compact(
+            'activeShipments',
+            'activeVehicles',
+            'assignmentRequests',
+            'auditLogs',
+            'drivers',
+            'owners',
+            'platformCommission',
+            'recentRequests',
+            'roleCounts',
+            'systemConfig',
+            'todayRevenue',
+            'totalAdmins',
+            'totalDrivers',
+            'totalFarmers',
+            'totalOwners',
+            'totalUsers',
+            'totalVehicles',
+            'unverifiedDrivers',
+            'users',
+            'vehicles',
+        ));
     }
 
     public function approveDriver(Request $request, Driver $driver): RedirectResponse
     {
         $driver->update(['verified' => true]);
         return back()->with('status', 'Driver verified and approved successfully.');
+    }
+
+    public function exportAdminReport()
+    {
+        return view('dashboards.admin-report', [
+            'users' => User::orderBy('role')->orderBy('name')->get(),
+            'owners' => TransportOwner::with('user')->withCount('vehicles')->orderBy('company_name')->get(),
+            'vehicles' => Vehicle::with(['type', 'owner.user', 'driver.user'])->orderBy('registration_number')->get(),
+            'requests' => TransportRequest::with('farmer.user')->latest()->get(),
+            'assignmentRequests' => VehicleRequest::with(['driver.user', 'vehicle.owner.user'])->latest()->get(),
+        ]);
     }
 }

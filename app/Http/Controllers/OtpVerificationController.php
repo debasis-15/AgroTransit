@@ -37,7 +37,10 @@ class OtpVerificationController extends Controller
         }
 
         $verification->update(['verified' => true]);
-        $user->update(['is_active' => true]);
+        $user->forceFill([
+            'email_verified_at' => now(),
+            'is_active' => true,
+        ])->save();
 
         Auth::login($user);
         $request->session()->regenerate();
@@ -76,6 +79,6 @@ class OtpVerificationController extends Controller
             logger()->error('Failed to send resend OTP email: ' . $e->getMessage());
         }
 
-        return back()->with('status', 'A new OTP has been sent. Demo OTP: '.$otp);
+        return back()->with('status', 'A new OTP has been sent to '.$user->email.'.');
     }
 }

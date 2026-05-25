@@ -22,30 +22,36 @@ class RegisterController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'unique:users,email'],
             'role' => ['required', 'in:farmer,driver,transport_owner,admin'],
             'password' => ['required', 'confirmed'],
         ]);
 
         $user = User::create([
+            'name' => $data['name'],
             'email' => $data['email'],
             'role' => $data['role'],
-            'name' => explode('@', $data['email'])[0],
-            'is_active' => true,
+            'is_active' => false,
             'password' => Hash::make($data['password']),
         ]);
 
-        \Illuminate\Support\Facades\Auth::login($user);
-        $request->session()->regenerate();
+        $otp = (string) random_int(100000, 999999);
 
-        $route = match ($user->role) {
-            'farmer' => 'farmer.dashboard',
-            'driver' => 'driver.dashboard',
-            'transport_owner' => 'owner.dashboard',
-            'admin' => 'admin.dashboard',
-            default => 'home',
-        };
+        OtpVerification::create([
+            'user_id' => $user->id,
+            'otp' => Hash::make($otp),
+            'expires_at' => now()->addMinutes(10),
+        ]);
 
-        return redirect()->route($route)->with('status', 'Account created and logged in successfully.');
+        try {
+            Mail::to($user->email)->send(new OtpMail($otp));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return redirect()
+            ->route('otp.show', $user)
+            ->with('status', 'Account created. We sent a 6-digit OTP to your email.');
     }
 }

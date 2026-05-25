@@ -14,6 +14,9 @@ Route::post('/login', [LoginController::class, 'store'])->name('login.store');
 Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
 Route::get('/signup', [RegisterController::class, 'create'])->name('register');
 Route::post('/signup', [RegisterController::class, 'store'])->name('register.store');
+Route::get('/verify-email/{user}', [OtpVerificationController::class, 'show'])->name('otp.show');
+Route::post('/verify-email/{user}', [OtpVerificationController::class, 'verify'])->name('otp.verify');
+Route::post('/verify-email/{user}/resend', [OtpVerificationController::class, 'resend'])->name('otp.resend');
 
 Route::middleware(['auth', 'role:farmer'])->group(function () {
     Route::get('/farmer/dashboard', [DashboardController::class, 'farmer'])->name('farmer.dashboard');
@@ -37,6 +40,7 @@ Route::middleware(['auth', 'role:transport_owner'])->group(function () {
 
 Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/admin/dashboard', [DashboardController::class, 'admin'])->name('admin.dashboard');
+    Route::get('/admin/report', [DashboardController::class, 'exportAdminReport'])->name('admin.report');
     Route::post('/admin/approve-driver/{driver}', [DashboardController::class, 'approveDriver'])->name('admin.approve-driver');
 });
 
