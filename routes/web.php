@@ -18,8 +18,10 @@ Route::post('/signup', [RegisterController::class, 'store'])->name('register.sto
 Route::middleware(['auth', 'role:farmer'])->group(function () {
     Route::get('/farmer/dashboard', [DashboardController::class, 'farmer'])->name('farmer.dashboard');
     Route::get('/farmer/dashboard-data', [FarmerDashboardController::class, 'dashboardData'])->name('farmer.dashboard.data');
+    Route::get('/api/vehicles/available', [TransportRequestController::class, 'availableVehicles'])->name('api.vehicles.available');
     Route::post('/api/vehicles/match', [TransportRequestController::class, 'matchVehicles'])->name('api.vehicles.match');
     Route::post('/api/bookings', [TransportRequestController::class, 'storeBookedRequest'])->name('api.bookings');
+
 });
 
 Route::middleware(['auth', 'role:driver'])->group(function () {

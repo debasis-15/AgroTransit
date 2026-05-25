@@ -23,6 +23,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load live farmer dashboard summary and ship statuses
     fetchDashboardData();
     setInterval(fetchDashboardData, 12000);
+
+    // Load all available vehicles for the create-request tab
+    loadAvailableVehicles();
 });
 
 // === TAB SWITCHING ===
@@ -52,6 +55,11 @@ function switchTab(tabId) {
         // Custom hooks for tracking/canvas resize
         if (tabId === 'tracking') {
             setTimeout(drawTrackingMap, 100);
+        }
+
+        // Reload available vehicles when create-request tab is opened
+        if (tabId === 'create-request') {
+            loadAvailableVehicles();
         }
     }
 }
@@ -158,20 +166,40 @@ function triggerAIRecommendation() {
             </div>
         `;
 
-        const costBase = distance * baseRate;
-        const costFuel = Math.round(distance * 5.2);
+        const costDistance = distance * baseRate;
+        const costWeight = Math.round(weight * distance * 0.005);
+        const costColdStorage = tempSensitive ? 500 : 0;
         const costPriority = isEmergency ? 350 : 0;
-        const poolingDiscount = tempSensitive ? Math.round(costBase * 0.4) : Math.round(costBase * 0.2);
-        const total = (costBase + costFuel + costPriority) - poolingDiscount;
+        const tripBaseCost = 300 + costDistance + costWeight + costColdStorage;
+        const poolingDiscount = tempSensitive ? Math.round(tripBaseCost * 0.4) : Math.round(tripBaseCost * 0.2);
+        const total = (tripBaseCost + costPriority) - poolingDiscount;
 
-        const baseCostEl = document.getElementById('calcBaseCost');
-        const fuelEl = document.getElementById('calcFuel');
+        const labelDistanceEl = document.getElementById('labelDistance');
+        const labelWeightEl = document.getElementById('labelWeight');
+
+        if (labelDistanceEl) labelDistanceEl.innerHTML = `Distance Charge <span class="badge bg-secondary font-monospace small px-2">${distance} km @ ₹${baseRate}/km</span>:`;
+        if (labelWeightEl) labelWeightEl.innerHTML = `Weight Surcharge <span class="badge bg-secondary font-monospace small px-2">${weight} kg</span>:`;
+
+        const distanceEl = document.getElementById('calcDistance');
+        const weightEl = document.getElementById('calcWeight');
+        const coldStorageEl = document.getElementById('calcColdStorage');
         const priorityEl = document.getElementById('calcPriority');
         const discountEl = document.getElementById('calcDiscount');
         const totalEl = document.getElementById('calcTotal');
 
-        if (baseCostEl) baseCostEl.textContent = '₹' + costBase.toLocaleString();
-        if (fuelEl) fuelEl.textContent = '₹' + costFuel.toLocaleString();
+        if (distanceEl) distanceEl.textContent = '₹' + costDistance.toLocaleString();
+        if (weightEl) weightEl.textContent = '₹' + costWeight.toLocaleString();
+        if (coldStorageEl) {
+            coldStorageEl.textContent = '₹' + costColdStorage.toLocaleString();
+            const row = document.getElementById('rowColdStorage');
+            if (row) {
+                if (tempSensitive) {
+                    row.classList.remove('d-none');
+                } else {
+                    row.classList.add('d-none');
+                }
+            }
+        }
         if (priorityEl) priorityEl.textContent = '₹' + costPriority.toLocaleString();
         if (discountEl) discountEl.textContent = '-₹' + poolingDiscount.toLocaleString();
         if (totalEl) totalEl.textContent = '₹' + total.toLocaleString();
@@ -921,4 +949,290 @@ function addNotification(message) {
     `;
     feed.prepend(card);
     setTimeout(() => card.classList.add('shadow-lg'), 10);
+}
+
+// === ALL AVAILABLE VEHICLES CATALOG ===
+function loadAvailableVehicles() {
+    const grid = document.getElementById('allAvailableVehiclesGrid');
+    const countBadge = document.getElementById('availableVehicleCount');
+    if (!grid) return;
+
+    grid.innerHTML = `
+        <div class="col-12 text-center py-5 text-muted">
+            <div class="spinner-border text-success" role="status"></div>
+            <p class="mt-2 small">Fetching available vehicles...</p>
+        </div>
+    `;
+
+    fetch('/api/vehicles/available')
+        .then(res => {
+            if (!res.ok) throw new Error('Failed to load');
+            return res.json();
+        })
+        .then(data => {
+            renderAllAvailableVehicles(data.vehicles || []);
+            const availCount = (data.vehicles || []).filter(v => v.is_available).length;
+            const totalCount = (data.vehicles || []).length;
+            if (countBadge) {
+                countBadge.textContent = availCount + ' Available / ' + totalCount + ' Total';
+                countBadge.className = availCount > 0
+                    ? 'badge bg-success px-3 py-2 rounded-pill'
+                    : 'badge bg-danger px-3 py-2 rounded-pill';
+            }
+        })
+        .catch(err => {
+            console.warn('Available vehicles fetch failed:', err);
+            if (grid) grid.innerHTML = `<div class="col-12"><div class="alert alert-warning">Could not load vehicles. Please try again.</div></div>`;
+            if (countBadge) countBadge.textContent = '0 Available';
+        });
+}
+
+function renderAllAvailableVehicles(vehicles) {
+    const grid = document.getElementById('allAvailableVehiclesGrid');
+    if (!grid) return;
+
+    if (!vehicles.length) {
+        grid.innerHTML = `
+            <div class="col-12">
+                <div class="text-center py-5">
+                    <div style="width:80px;height:80px;margin:0 auto 16px;border-radius:50%;background:linear-gradient(135deg,rgba(174,183,132,.15),rgba(65,67,27,.08));display:grid;place-items:center;">
+                        <i class="bi bi-truck fs-1" style="color:#AEB784;"></i>
+                    </div>
+                    <h5 class="fw-bold text-dark">No vehicles registered yet</h5>
+                    <p class="text-muted small mb-0">Vehicles will appear here once transport owners add them to the fleet.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = vehicles.map(v => {
+        const isAvail = v.is_available;
+        const coldBadge = v.cold_storage
+            ? `<div style="position:absolute;top:12px;right:0;background:linear-gradient(135deg,#0dcaf0,#0aa2c0);color:#fff;font-size:10px;font-weight:700;padding:3px 12px 3px 10px;border-radius:20px 0 0 20px;letter-spacing:.3px;"><i class="bi bi-snow2 me-1"></i>COLD CHAIN</div>`
+            : '';
+        const fuelIcon = v.fuel_type === 'Electric' ? '⚡' : (v.fuel_type === 'CNG' ? '🟢' : '⛽');
+
+        // Star rating visual
+        const rating = parseFloat(v.driver_rating) || 4.5;
+        const fullStars = Math.floor(rating);
+        const halfStar = (rating % 1) >= 0.3;
+        let starsHtml = '';
+        for (let i = 0; i < 5; i++) {
+            if (i < fullStars) starsHtml += '<i class="bi bi-star-fill" style="color:#f5a623;font-size:11px;"></i>';
+            else if (i === fullStars && halfStar) starsHtml += '<i class="bi bi-star-half" style="color:#f5a623;font-size:11px;"></i>';
+            else starsHtml += '<i class="bi bi-star" style="color:#ddd;font-size:11px;"></i>';
+        }
+
+        // ━━ Header gradient based on vehicle type
+        const typeGradients = {
+            'Mini Truck': 'linear-gradient(135deg,#41431B 0%,#6b6e2c 100%)',
+            'Cargo Truck': 'linear-gradient(135deg,#2c4a1e 0%,#4a7c34 100%)',
+            'Refrigerated Truck': 'linear-gradient(135deg,#1a5276 0%,#2e86c1 100%)',
+            'Pickup Van': 'linear-gradient(135deg,#5b370a 0%,#9c6b30 100%)',
+        };
+        const headerBg = typeGradients[v.vehicle_type] || typeGradients['Mini Truck'];
+        const typeIcons = {
+            'Mini Truck': 'bi-truck',
+            'Cargo Truck': 'bi-truck-front',
+            'Refrigerated Truck': 'bi-thermometer-snow',
+            'Pickup Van': 'bi-truck-flatbed',
+        };
+        const typeIcon = typeIcons[v.vehicle_type] || 'bi-truck';
+
+        // ━━ BOOKED / UNAVAILABLE CARD ━━━━━━━━━━━━━━━━━━━━━━━━━
+        if (!isAvail) {
+            const statusLabel = {
+                busy: 'On Trip',
+                in_transit: 'In Transit',
+                maintenance: 'Maintenance',
+            }[v.tracking_status] || 'Busy';
+
+            const bookingBlock = v.booked_date ? `
+                <div style="background:linear-gradient(135deg,rgba(220,53,69,.04),rgba(220,53,69,.08));border:1px solid rgba(220,53,69,.12);border-radius:12px;padding:12px 14px;margin-bottom:16px;">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <div style="width:28px;height:28px;border-radius:8px;background:rgba(220,53,69,.1);display:grid;place-items:center;">
+                            <i class="bi bi-calendar-x-fill" style="color:#dc3545;font-size:13px;"></i>
+                        </div>
+                        <span style="font-weight:700;font-size:13px;color:#dc3545;">Booked: ${v.booked_date}</span>
+                    </div>
+                    ${v.booked_destination ? `<div style="font-size:12px;color:#555;padding-left:36px;"><i class="bi bi-pin-map-fill me-1 text-danger"></i>Route → <strong>${v.booked_destination}</strong></div>` : ''}
+                    ${v.estimated_return ? `<div style="font-size:11px;color:#888;padding-left:36px;margin-top:4px;"><i class="bi bi-clock-history me-1"></i>Available by: ${v.estimated_return}</div>` : ''}
+                </div>
+            ` : `
+                <div style="background:rgba(255,193,7,.08);border:1px solid rgba(255,193,7,.2);border-radius:12px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#856404;">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i> Currently ${statusLabel} — check back soon
+                </div>
+            `;
+
+            return `
+                <div class="col-md-6 col-xl-4 mb-4">
+                    <div class="vehicle-catalog-card" style="border-radius:20px;overflow:hidden;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.06);transition:transform .2s,box-shadow .2s;opacity:.75;position:relative;height:100%;display:flex;flex-direction:column;">
+                        ${coldBadge}
+                        <!-- Header -->
+                        <div style="background:${headerBg};padding:20px 22px 18px;position:relative;filter:grayscale(60%);">
+                            <div style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.25);"></div>
+                            <div style="position:relative;z-index:1;">
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div style="width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.18);display:grid;place-items:center;">
+                                            <i class="bi ${typeIcon}" style="color:#fff;font-size:16px;"></i>
+                                        </div>
+                                        <span style="color:rgba(255,255,255,.85);font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;">${v.vehicle_type}</span>
+                                    </div>
+                                    <span style="background:rgba(220,53,69,.9);color:#fff;font-size:10px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.3px;"><i class="bi bi-lock-fill me-1"></i>${statusLabel.toUpperCase()}</span>
+                                </div>
+                                <h4 style="color:#fff;font-weight:800;font-size:1.35rem;margin:0;letter-spacing:1px;font-family:'Outfit',sans-serif;">${v.registration_number}</h4>
+                                <div style="color:rgba(255,255,255,.6);font-size:12px;margin-top:4px;"><i class="bi bi-geo-alt-fill me-1"></i>${v.current_location}</div>
+                            </div>
+                        </div>
+
+                        <!-- Body -->
+                        <div style="padding:20px 22px;flex:1;display:flex;flex-direction:column;">
+                            <!-- Stats -->
+                            <div class="d-flex gap-2 mb-4">
+                                <div style="flex:1;text-align:center;background:#f8f9fa;border-radius:12px;padding:12px 6px;">
+                                    <i class="bi bi-box-seam" style="color:#41431B;font-size:16px;display:block;margin-bottom:4px;"></i>
+                                    <div style="font-weight:800;font-size:15px;color:#1a1a1a;">${v.capacity_kg}<span style="font-size:11px;font-weight:400;color:#888;"> kg</span></div>
+                                    <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.5px;">Capacity</div>
+                                </div>
+                                <div style="flex:1;text-align:center;background:#f8f9fa;border-radius:12px;padding:12px 6px;">
+                                    <i class="bi bi-currency-rupee" style="color:#41431B;font-size:16px;display:block;margin-bottom:4px;"></i>
+                                    <div style="font-weight:800;font-size:15px;color:#1a1a1a;">${v.base_rate_per_km}<span style="font-size:11px;font-weight:400;color:#888;">/km</span></div>
+                                    <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.5px;">Rate</div>
+                                </div>
+                                <div style="flex:1;text-align:center;background:#f8f9fa;border-radius:12px;padding:12px 6px;">
+                                    <span style="font-size:16px;display:block;margin-bottom:4px;">${fuelIcon}</span>
+                                    <div style="font-weight:700;font-size:13px;color:#1a1a1a;">${v.fuel_type}</div>
+                                    <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.5px;">Fuel</div>
+                                </div>
+                            </div>
+
+                            ${bookingBlock}
+
+                            <!-- Driver -->
+                            <div style="border-top:1px solid #f0f0f0;padding-top:14px;margin-top:auto;">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#e8e8e8,#d4d4d4);display:grid;place-items:center;flex-shrink:0;">
+                                        <i class="bi bi-person-fill" style="color:#999;font-size:20px;"></i>
+                                    </div>
+                                    <div style="min-width:0;">
+                                        <div style="font-weight:700;font-size:14px;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${v.driver_name}</div>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div>${starsHtml}</div>
+                                            <span style="font-size:11px;color:#999;">${v.driver_rating}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="font-size:11px;color:#aaa;margin-top:8px;padding-left:2px;"><i class="bi bi-building me-1"></i>${v.owner_name}</div>
+                            </div>
+                        </div>
+
+                        <!-- Button -->
+                        <div style="padding:0 22px 20px;">
+                            <button class="btn w-100 py-2" style="background:#e9ecef;color:#999;font-weight:700;border-radius:12px;border:none;font-size:13px;cursor:not-allowed;" disabled>
+                                <i class="bi bi-x-circle me-1"></i> Not Available
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ━━ AVAILABLE CARD ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        return `
+            <div class="col-md-6 col-xl-4 mb-4">
+                <div class="vehicle-catalog-card" style="border-radius:20px;overflow:hidden;background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.07);transition:transform .25s cubic-bezier(.4,0,.2,1),box-shadow .25s cubic-bezier(.4,0,.2,1);position:relative;height:100%;display:flex;flex-direction:column;border:2px solid transparent;" onmouseenter="this.style.transform='translateY(-6px)';this.style.boxShadow='0 12px 40px rgba(65,67,27,.15)';this.style.borderColor='rgba(174,183,132,.4)';" onmouseleave="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.07)';this.style.borderColor='transparent';">
+                    ${coldBadge}
+                    <!-- Header -->
+                    <div style="background:${headerBg};padding:20px 22px 18px;position:relative;">
+                        <div style="position:absolute;top:12px;right:12px;width:10px;height:10px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,.3);animation:pulse-dot 2s infinite;"></div>
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <div style="width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.18);backdrop-filter:blur(4px);display:grid;place-items:center;">
+                                <i class="bi ${typeIcon}" style="color:#fff;font-size:16px;"></i>
+                            </div>
+                            <span style="color:rgba(255,255,255,.85);font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;">${v.vehicle_type}</span>
+                        </div>
+                        <h4 style="color:#fff;font-weight:800;font-size:1.35rem;margin:0;letter-spacing:1px;font-family:'Outfit',sans-serif;">${v.registration_number}</h4>
+                        <div style="color:rgba(255,255,255,.6);font-size:12px;margin-top:4px;"><i class="bi bi-geo-alt-fill me-1"></i>${v.current_location}</div>
+                    </div>
+
+                    <!-- Body -->
+                    <div style="padding:20px 22px;flex:1;display:flex;flex-direction:column;">
+                        <!-- Stats -->
+                        <div class="d-flex gap-2 mb-4">
+                            <div style="flex:1;text-align:center;background:linear-gradient(135deg,rgba(174,183,132,.08),rgba(174,183,132,.15));border-radius:12px;padding:12px 6px;border:1px solid rgba(174,183,132,.1);">
+                                <i class="bi bi-box-seam" style="color:#41431B;font-size:16px;display:block;margin-bottom:4px;"></i>
+                                <div style="font-weight:800;font-size:15px;color:#1a1a1a;">${v.capacity_kg}<span style="font-size:11px;font-weight:400;color:#888;"> kg</span></div>
+                                <div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.5px;">Capacity</div>
+                            </div>
+                            <div style="flex:1;text-align:center;background:linear-gradient(135deg,rgba(174,183,132,.08),rgba(174,183,132,.15));border-radius:12px;padding:12px 6px;border:1px solid rgba(174,183,132,.1);">
+                                <i class="bi bi-currency-rupee" style="color:#41431B;font-size:16px;display:block;margin-bottom:4px;"></i>
+                                <div style="font-weight:800;font-size:15px;color:#1a1a1a;">₹${v.base_rate_per_km}<span style="font-size:11px;font-weight:400;color:#888;">/km</span></div>
+                                <div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.5px;">Rate</div>
+                            </div>
+                            <div style="flex:1;text-align:center;background:linear-gradient(135deg,rgba(174,183,132,.08),rgba(174,183,132,.15));border-radius:12px;padding:12px 6px;border:1px solid rgba(174,183,132,.1);">
+                                <span style="font-size:16px;display:block;margin-bottom:4px;">${fuelIcon}</span>
+                                <div style="font-weight:700;font-size:13px;color:#1a1a1a;">${v.fuel_type}</div>
+                                <div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.5px;">Fuel</div>
+                            </div>
+                        </div>
+
+                        <!-- Driver -->
+                        <div style="border-top:1px solid #f0f0f0;padding-top:14px;margin-top:auto;">
+                            <div class="d-flex align-items-center gap-3">
+                                <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#41431B,#6b6e2c);display:grid;place-items:center;flex-shrink:0;">
+                                    <i class="bi bi-person-fill" style="color:#fff;font-size:20px;"></i>
+                                </div>
+                                <div style="min-width:0;">
+                                    <div style="font-weight:700;font-size:14px;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${v.driver_name}</div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div>${starsHtml}</div>
+                                        <span style="font-size:11px;color:#999;">${v.driver_rating}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="font-size:11px;color:#aaa;margin-top:8px;padding-left:2px;"><i class="bi bi-building me-1"></i>${v.owner_name}</div>
+                        </div>
+                    </div>
+
+                    <!-- Button -->
+                    <div style="padding:0 22px 20px;">
+                        <button
+                            onclick="selectVehicleFromCatalog(${v.id}, '${v.registration_number}', '${v.vehicle_type}', ${v.capacity_kg}, ${v.base_rate_per_km})"
+                            class="btn w-100 py-2"
+                            style="background:linear-gradient(135deg,#41431B,#5a5d24);color:#fff;font-weight:700;border-radius:12px;border:none;font-size:13px;letter-spacing:.3px;transition:all .2s;"
+                            onmouseenter="this.style.background='linear-gradient(135deg,#5a5d24,#41431B)';this.style.boxShadow='0 4px 16px rgba(65,67,27,.3)';"
+                            onmouseleave="this.style.background='linear-gradient(135deg,#41431B,#5a5d24)';this.style.boxShadow='none';">
+                            <i class="bi bi-check-circle-fill me-1"></i> Select this Vehicle
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+
+function selectVehicleFromCatalog(vehicleId, regNumber, vehicleType, capacityKg, ratePerKm) {
+    // Scroll to form
+    document.getElementById('bookingForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Highlight the selected vehicle
+    document.querySelectorAll('.vehicle-catalog-card').forEach(c => {
+        c.style.outline = '';
+        c.style.boxShadow = '';
+    });
+
+    // Store selected vehicle id globally for booking
+    window._selectedCatalogVehicleId = vehicleId;
+
+    triggerToastNotification(`✓ Selected: ${regNumber} (${vehicleType}). Fill in your crop details and click "Scan" to book.`);
+
+    // Update scan button to show the vehicle is pre-selected
+    const scanBtn = document.querySelector('[onclick="searchMatchingVehicles()"]');
+    if (scanBtn) {
+        scanBtn.innerHTML = `<i class="bi bi-check-circle me-1"></i> Confirm Booking with ${regNumber}`;
+        scanBtn.onclick = () => bookVehicle(vehicleId, null);
+    }
 }

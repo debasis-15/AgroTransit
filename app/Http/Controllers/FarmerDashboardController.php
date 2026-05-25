@@ -119,7 +119,7 @@ class FarmerDashboardController extends Controller
 
         foreach ($farmerRequests as $req) {
             // Estimate base rate vs pooled rate
-            $baseCost = 300 + ($req->distance_km * ($req->vehicleType->base_rate_per_km ?? 22));
+            $baseCost = 300 + ($req->distance_km * ($req->vehicleType->base_rate_per_km ?? 22)) + ($req->weight_kg * $req->distance_km * 0.005);
             $savings = max(0, $baseCost - $req->estimated_cost);
             $totalSavings += $savings;
         }
@@ -132,9 +132,7 @@ class FarmerDashboardController extends Controller
         ];
 
         // Simulated updates based on real shipment changes
-        $notifications = [
-            ['message' => '🚚 Fleet active and ready to assign bookings.', 'type' => 'info'],
-        ];
+        $notifications = [];
 
         if ($activeCount > 0) {
             $notifications[] = ['message' => '📍 Live location telemetry active for your shipments.', 'type' => 'success'];

@@ -127,13 +127,28 @@
                 <button type="button" onclick="searchMatchingVehicles()" class="btn btn-lg btn-leaf w-100 py-3 fw-bold mb-4 shadow"><i class="bi bi-search me-1"></i> Scan for Matching Vehicles & Pools</button>
             </form>
 
-            <!-- Matching Vehicles Grid Container -->
+            <!-- All Available Vehicles (loaded on tab open) -->
+            <div id="allAvailableVehiclesSection" class="mb-5">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h4 class="fw-bold mb-0" style="color:var(--forest);"><i class="bi bi-truck me-2 text-success"></i> All Available Vehicles</h4>
+                    <span class="badge bg-success px-3 py-2 rounded-pill" id="availableVehicleCount">Loading...</span>
+                </div>
+                <div id="allAvailableVehiclesGrid" class="row">
+                    <div class="col-12 text-center py-5 text-muted">
+                        <div class="spinner-border text-success" role="status"></div>
+                        <p class="mt-2 small">Fetching available vehicles...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Matching Vehicles Grid Container (after Scan) -->
             <div id="matchingVehiclesSection" class="d-none mb-5">
-                <h4 class="fw-bold mb-3" style="color:var(--forest);"><i class="bi bi-shuffle text-success me-2"></i> Available Matches & Shared Pools</h4>
+                <h4 class="fw-bold mb-3" style="color:var(--forest);"><i class="bi bi-shuffle text-success me-2"></i> Available Matches &amp; Shared Pools</h4>
                 <div id="matchingVehiclesGrid" class="row">
                     <!-- Dynamic matching cards populate here -->
                 </div>
             </div>
+
         </div>
 
         <!-- Recommendations & Estimation Sidebar -->
@@ -161,12 +176,20 @@
                 </div>
                 <div class="card-body">
                     <div class="d-flex justify-content-between mb-2">
-                        <span class="text-muted">Base Cost:</span>
-                        <span class="fw-bold text-dark" id="calcBaseCost">₹0</span>
+                        <span class="text-muted">Base Booking Fee:</span>
+                        <span class="fw-bold text-dark" id="calcBaseFee">₹300</span>
                     </div>
                     <div class="d-flex justify-content-between mb-2">
-                        <span class="text-muted">Fuel Surcharge:</span>
-                        <span class="fw-bold text-dark" id="calcFuel">₹0</span>
+                        <span class="text-muted" id="labelDistance">Distance Charge:</span>
+                        <span class="fw-bold text-dark" id="calcDistance">₹0</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted" id="labelWeight">Weight Surcharge:</span>
+                        <span class="fw-bold text-dark" id="calcWeight">₹0</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2" id="rowColdStorage">
+                        <span class="text-muted">Cold Storage Fee:</span>
+                        <span class="fw-bold text-dark" id="calcColdStorage">₹0</span>
                     </div>
                     <div class="d-flex justify-content-between mb-2">
                         <span class="text-muted">Priority Fee:</span>

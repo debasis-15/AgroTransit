@@ -58,7 +58,7 @@ class TransportRequestController extends Controller
         );
 
         $estimatedCost = $vehicleType
-            ? ($data['distance_km'] * $vehicleType->base_rate_per_km) + ($data['priority'] === 'emergency' ? 350 : 0)
+            ? 300 + ((int) $data['distance_km'] * ($vehicleType->base_rate_per_km ?? 22)) + ((int) $data['weight_kg'] * (int) $data['distance_km'] * 0.005) + (($data['temperature_sensitive'] ?? false) ? 500 : 0) + ($data['priority'] === 'emergency' ? 350 : 0)
             : 0;
 
         TransportRequest::create($data + [
@@ -69,6 +69,73 @@ class TransportRequestController extends Controller
         ]);
 
         return redirect()->route('farmer.dashboard')->with('status', 'Transport request created with smart vehicle recommendation.');
+    }
+
+    public function availableVehicles(): JsonResponse
+    {
+        // Fetch ALL vehicles (all statuses) with relations + latest active shipment
+        $vehicles = Vehicle::with([
+            'type',
+            'driver.user',
+            'owner.user',
+            'shipments' => function ($q) {
+                $q->whereIn('shipment_status', ['pickup', 'in_transit', 'loading'])
+                  ->with(['request'])
+                  ->orderByDesc('created_at')
+                  ->limit(1);
+            },
+        ])
+        ->whereNotNull('driver_id')
+        ->whereHas('driver', function ($q) {
+            $q->where('verified', true);
+        })
+        ->orderByRaw("FIELD(tracking_status, 'available', 'busy', 'in_transit', 'maintenance')")
+        ->get();
+
+        $result = $vehicles->map(function ($vehicle) {
+            $isAvailable = $vehicle->tracking_status === 'available';
+
+            // For booked vehicles, pull booking info from latest shipment
+            $latestShipment = $vehicle->shipments->first();
+            $request        = $latestShipment?->request;
+
+            $bookedDate        = null;
+            $bookedDestination = null;
+            $estimatedReturn   = null;
+
+            if (!$isAvailable && $latestShipment) {
+                $bookedDate = $request?->pickup_date
+                    ? \Carbon\Carbon::parse($request->pickup_date)->format('d M Y')
+                    : \Carbon\Carbon::parse($latestShipment->created_at)->format('d M Y');
+
+                $bookedDestination = $request?->destination ?? null;
+
+                $estimatedReturn = $request?->pickup_date
+                    ? \Carbon\Carbon::parse($request->pickup_date)->addDay()->format('d M Y')
+                    : \Carbon\Carbon::parse($latestShipment->created_at)->addDays(2)->format('d M Y');
+            }
+
+            return [
+                'id'                  => $vehicle->id,
+                'registration_number' => $vehicle->registration_number,
+                'vehicle_type'        => $vehicle->type->name ?? 'Mini Truck',
+                'capacity_kg'         => $vehicle->capacity_kg,
+                'cold_storage'        => (bool) $vehicle->cold_storage,
+                'fuel_type'           => ucfirst($vehicle->fuel_type ?? 'Diesel'),
+                'current_location'    => $vehicle->current_location ?? 'Punjab',
+                'driver_name'         => $vehicle->driver->user->name ?? 'N/A',
+                'driver_rating'       => $vehicle->driver->rating ?? '4.8',
+                'owner_name'          => $vehicle->owner->user->name ?? 'N/A',
+                'base_rate_per_km'    => $vehicle->type->base_rate_per_km ?? 22,
+                'tracking_status'     => $vehicle->tracking_status,
+                'is_available'        => $isAvailable,
+                'booked_date'         => $bookedDate,
+                'booked_destination'  => $bookedDestination,
+                'estimated_return'    => $estimatedReturn,
+            ];
+        });
+
+        return response()->json(['vehicles' => $result]);
     }
 
     public function matchVehicles(Request $request): JsonResponse
@@ -118,7 +185,8 @@ class TransportRequestController extends Controller
 
             // Calculations
             $baseRate = $vehicle->type->base_rate_per_km ?? 22;
-            $tripBaseCost = 300 + ($distanceKm * $baseRate) + ($vehicle->cold_storage ? 500 : 0);
+            $newTotalWeight = $currentLoad + $weightKg;
+            $tripBaseCost = 300 + ($distanceKm * $baseRate) + ($newTotalWeight * $distanceKm * 0.005) + ($vehicle->cold_storage ? 500 : 0);
             
             // Determine if emergency is requested by any member
             $hasEmergency = $priority === 'emergency';
@@ -135,7 +203,6 @@ class TransportRequestController extends Controller
             $discountedTotal = $tripBaseCost * (1 - $discountPercent);
 
             // Proportional cost share split
-            $newTotalWeight = $currentLoad + $weightKg;
             $myCostShare = ($weightKg / $newTotalWeight) * $discountedTotal;
 
             // Calculate preview of all members shares
@@ -191,7 +258,7 @@ class TransportRequestController extends Controller
 
         foreach ($availableVehicles as $vehicle) {
             $baseRate = $vehicle->type->base_rate_per_km ?? 22;
-            $tripBaseCost = 300 + ($distanceKm * $baseRate) + ($vehicle->cold_storage ? 500 : 0) + ($priority === 'emergency' ? 350 : 0);
+            $tripBaseCost = 300 + ($distanceKm * $baseRate) + ($weightKg * $distanceKm * 0.005) + ($vehicle->cold_storage ? 500 : 0) + ($priority === 'emergency' ? 350 : 0);
 
             $matchingVehicles[] = [
                 'id' => $vehicle->id,
@@ -282,19 +349,6 @@ class TransportRequestController extends Controller
                 // Joining existing pool
                 $newMembersCount = $pooledTrip->members()->count() + 1;
                 $discountPercent = $newMembersCount == 2 ? 0.20 : ($newMembersCount >= 3 ? 0.40 : 0.0);
-                
-                $baseRate = $vehicle->type->base_rate_per_km ?? 22;
-                $tripBaseCost = 300 + ($distanceKm * $baseRate) + ($vehicle->cold_storage ? 500 : 0);
-                
-                // Scan for priority
-                $hasEmergency = $priority === 'emergency';
-                foreach ($pooledTrip->members as $member) {
-                    if ($member->request && $member->request->priority === 'emergency') {
-                        $hasEmergency = true;
-                    }
-                }
-                $tripBaseCost += $hasEmergency ? 350 : 0;
-                $discountedTotal = $tripBaseCost * (1 - $discountPercent);
 
                 // Add member
                 $pooledTrip->members()->create([
@@ -307,6 +361,19 @@ class TransportRequestController extends Controller
                 // Update vehicle load
                 $totalLoad = $pooledTrip->members()->sum('weight_kg');
                 $vehicle->update(['current_load' => $totalLoad]);
+
+                $baseRate = $vehicle->type->base_rate_per_km ?? 22;
+                $tripBaseCost = 300 + ($distanceKm * $baseRate) + ($totalLoad * $distanceKm * 0.005) + ($vehicle->cold_storage ? 500 : 0);
+                
+                // Scan for priority
+                $hasEmergency = $priority === 'emergency';
+                foreach ($pooledTrip->members as $member) {
+                    if ($member->request && $member->request->priority === 'emergency') {
+                        $hasEmergency = true;
+                    }
+                }
+                $tripBaseCost += $hasEmergency ? 350 : 0;
+                $discountedTotal = $tripBaseCost * (1 - $discountPercent);
 
                 // Recalculate cost shares for all members
                 $allMembers = $pooledTrip->members;
@@ -329,7 +396,7 @@ class TransportRequestController extends Controller
             } else {
                 // Creating a new pool
                 $baseRate = $vehicle->type->base_rate_per_km ?? 22;
-                $tripBaseCost = 300 + ($distanceKm * $baseRate) + ($vehicle->cold_storage ? 500 : 0) + ($priority === 'emergency' ? 350 : 0);
+                $tripBaseCost = 300 + ($distanceKm * $baseRate) + ($weightKg * $distanceKm * 0.005) + ($vehicle->cold_storage ? 500 : 0) + ($priority === 'emergency' ? 350 : 0);
 
                 $pooledTrip = PooledTrip::create([
                     'vehicle_id' => $vehicle->id,
